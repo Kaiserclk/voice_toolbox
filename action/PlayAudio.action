@@ -1,0 +1,9 @@
+# PlayAudio.action
+string file_path
+float32 volume
+
+---
+bool success
+string message
+---
+float32 progress
