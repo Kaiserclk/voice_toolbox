@@ -1,0 +1,5 @@
+string audio_path
+---
+bool success          
+string result_text    
+string message

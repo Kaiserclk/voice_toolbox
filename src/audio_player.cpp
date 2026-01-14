@@ -9,7 +9,6 @@ namespace AudioPlayer
 
   AudioPlayer::AudioPlayer(const rclcpp::NodeOptions &options) : Node("audio_player_node", options)
   {
-    // 声明并获取参数
     declare_parameter<int>("sample_rate", 44100);
     declare_parameter<bool>("DEBUG_MODE_", false);
     get_parameter("sample_rate", sample_rate_);

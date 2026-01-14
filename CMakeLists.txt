@@ -7,8 +7,6 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
 pkg_check_modules(SDL2_MIXER REQUIRED SDL2_mixer)
@@ -18,10 +16,18 @@ find_package(rclcpp_components REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(rclcpp_lifecycle REQUIRED)
 
-# 生成action接口
+find_package(yaml-cpp REQUIRED)
+
+# 为sherpa-onnx设置路径
+set(SHERPA_ONNX_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/sherpa_lib/x86)
+set(SHERPA_ONNX_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include/sherpa-onnx)
+
+# 生成消息接口
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/PlayAudio.action"
+  "srv/OneShot.srv"
 )
 
 # 设置需要依赖生成action的库
@@ -31,6 +37,14 @@ set(dependencies
   std_msgs
   rclcpp_components
 )
+
+set(asr_dependencies
+  rclcpp
+  std_msgs
+  rclcpp_components
+  rclcpp_lifecycle
+)
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -44,7 +58,14 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
+
+#音频驱动
 add_library(audio_player_component SHARED src/audio_player.cpp)
+#ASR服务
+add_library(asr_sherpa_service_component SHARED src/asr/asr_sherpa.cpp)
+
+# 设置库为POSITION_INDEPENDENT_CODE以支持链接静态库
+set_property(TARGET asr_sherpa_service_component PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 # Link SDL2 libraries
 target_link_libraries(audio_player_component 
@@ -52,34 +73,76 @@ target_link_libraries(audio_player_component
   ${SDL2_MIXER_LIBRARIES}
 )
 
+
 # Include directories
 target_include_directories(audio_player_component PRIVATE
   ${SDL2_INCLUDE_DIRS}
   ${SDL2_MIXER_INCLUDE_DIRS}
-  include  # 添加头文件目录
+  include  
+)
+
+# Include directories for asr library - adding sherpa_lib include paths
+target_include_directories(asr_sherpa_service_component PRIVATE
+  include
+  ${SHERPA_ONNX_INCLUDE_DIR}  # 添加sherpa-onnx的头文件路径
+  ${yaml-cpp_INCLUDE_DIRS}
+)
+
+# 添加RPATH设置，确保运行时能找到动态库
+set_target_properties(asr_sherpa_service_component PROPERTIES
+  BUILD_WITH_INSTALL_RPATH TRUE
+  INSTALL_RPATH_USE_LINK_PATH TRUE
+  INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib:${SHERPA_ONNX_LIB_DIR}"
 )
 
 ament_target_dependencies(audio_player_component ${dependencies})
 
-# 添加对生成接口的依赖
-rosidl_target_interfaces(audio_player_component
-  ${PROJECT_NAME} 
-  "rosidl_typesupport_cpp")
+ament_target_dependencies(asr_sherpa_service_component ${asr_dependencies})
 
+target_link_libraries(asr_sherpa_service_component
+  ${YAML_CPP_LIBRARIES}
+  ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-c-api.so      # sherpa-onnx C API库
+  ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-cxx-api.so    # sherpa-onnx C++ API库
+  ${SHERPA_ONNX_LIB_DIR}/libonnxruntime.so            # onnxruntime库
+)
+
+rosidl_get_typesupport_target(cpp_typesupport_target_audio "${PROJECT_NAME}" "rosidl_typesupport_cpp")
+target_link_libraries(audio_player_component "${cpp_typesupport_target_audio}")
+
+rosidl_get_typesupport_target(cpp_typesupport_target_asr "${PROJECT_NAME}" "rosidl_typesupport_cpp")
+target_link_libraries(asr_sherpa_service_component "${cpp_typesupport_target_asr}")
+
+# 注册节点
 rclcpp_components_register_node(
     audio_player_component
     PLUGIN "AudioPlayer::AudioPlayer"
     EXECUTABLE AudioPlayer
 )
+rclcpp_components_register_node(
+    asr_sherpa_service_component
+    PLUGIN "voice_toolbox::Sherpa_onnx_ASRSerive"
+    EXECUTABLE asr_sherpa
+)
 
-ament_export_targets(export_audio_player_component_component)
+
+#
+ament_export_targets(export_audio_player_component)
 install(TARGETS audio_player_component
-        EXPORT export_audio_player_component_component
+        EXPORT export_audio_player_component
+        ARCHIVE DESTINATION lib
+        LIBRARY DESTINATION lib
+        RUNTIME DESTINATION bin
+)
+ament_export_targets(export_asr_sherpa_service_component)
+install(TARGETS asr_sherpa_service_component
+        EXPORT export_asr_sherpa_service_component
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin
 )
 
+
+# 安装配置文件
 install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME}
 )
