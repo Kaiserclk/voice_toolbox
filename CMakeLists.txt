@@ -19,6 +19,7 @@ find_package(std_msgs REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 
 find_package(yaml-cpp REQUIRED)
+find_package(websocketpp REQUIRED)
 
 # 为sherpa-onnx设置路径
 set(SHERPA_ONNX_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/sherpa_lib/x86)
@@ -98,8 +99,8 @@ set_target_properties(asr_sherpa_service_component PROPERTIES
 ament_target_dependencies(audio_player_component ${dependencies})
 
 ament_target_dependencies(asr_sherpa_service_component ${asr_dependencies})
-
 target_link_libraries(asr_sherpa_service_component
+  websocketpp::websocketpp
   ${YAML_CPP_LIBRARIES}
   ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-c-api.so      # sherpa-onnx C API库
   ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-cxx-api.so    # sherpa-onnx C++ API库

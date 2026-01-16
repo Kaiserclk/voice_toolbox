@@ -2,11 +2,26 @@
 
 namespace voice_toolbox
 {
-
     Sherpa_onnx_ASRSerive::Sherpa_onnx_ASRSerive(const rclcpp::NodeOptions &options)
         : ASR_Base("Sherpa_onnx_ASR", "asr_service", options)
     {
         this->declare_parameter<std::string>("config_file", "/home/kaiser/WORK_SPACE-2/voice_toolbox_ws/src/voice_toolbox/config/voice_toolbox_setting.yaml");
+    }
+
+    Sherpa_onnx_ASRSerive::~Sherpa_onnx_ASRSerive()
+    {
+        // 停止WebSocket服务器
+        try {
+            ws_server_.stop_listening();
+            ws_server_.stop();
+            
+            if (ws_thread_.joinable()) {
+                ws_thread_.join();
+            }
+            
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Error stopping WebSocket server: %s", e.what());
+        }
     }
 
     CallbackReturn Sherpa_onnx_ASRSerive::on_configure(const rclcpp_lifecycle::State &)
@@ -19,7 +34,6 @@ namespace voice_toolbox
         }
         YAML::Node config = YAML::LoadFile(config_file);
 
-        // 检查asr_sherpa_onnx部分是否存在
         if (!config["asr_sherpa_onnx"])
         {
             RCLCPP_ERROR(this->get_logger(), "Config file does not contain 'asr_sherpa_onnx' section");
@@ -39,7 +53,6 @@ namespace voice_toolbox
 
         asr_config_.model_config.debug = asr_node["debug"] ? asr_node["debug"].as<bool>() : false;
 
-        // 检查websocket部分是否存在
         if (!config["websocket"])
         {
             RCLCPP_WARN(this->get_logger(), "Config file does not contain 'websocket' section, using default values");
@@ -55,18 +68,17 @@ namespace voice_toolbox
 
             websocket_config_.connection_timeout = ws_node["connection_timeout"] ? ws_node["connection_timeout"].as<int>() : 300;
         }
-
         return CallbackReturn::SUCCESS;
     }
 
     /**
-     * @brief 激活ASR服务，并创建ASR引擎实例
-     * @param previous_state 上一个状态
+     * @brief 激活ASR服务，并创建ASR引擎实例和WebSocket服务器
+     * @param state 上一个状态
      * @return CallbackReturn 激活结果
      */
     CallbackReturn Sherpa_onnx_ASRSerive::on_activate(const rclcpp_lifecycle::State &state)
     {
-        // 先调用基类的on_activate方法来创建服务
+        // 先调用基类的方法创建ros2服务
         auto base_state = ASR_Base<voice_toolbox::srv::OneShot>::on_activate(state);
         if (base_state != CallbackReturn::SUCCESS) {
             return base_state;
@@ -80,7 +92,114 @@ namespace voice_toolbox
         }
 
         recognizer_ = std::make_unique<sherpa_onnx::cxx::OfflineRecognizer>(std::move(temp_recognizer));
+        
+        // 启动WebSocket服务器
+        try {
+            ws_server_.init_asio();
+            ws_server_.set_message_handler(std::bind(
+                &Sherpa_onnx_ASRSerive::handle_websocket_message, this, std::placeholders::_1, std::placeholders::_2));
+            ws_server_.set_open_handler(std::bind(
+                &Sherpa_onnx_ASRSerive::handle_websocket_open, this, std::placeholders::_1));
+            ws_server_.set_close_handler(std::bind(
+                &Sherpa_onnx_ASRSerive::handle_websocket_close, this, std::placeholders::_1));
+            ws_server_.set_error_handler(std::bind(
+                &Sherpa_onnx_ASRSerive::handle_websocket_error, this, std::placeholders::_1));
+            
+            ws_server_.listen(websocket_config_.port);
+            ws_server_.start_accept();
+            
+            // 在单独线程中运行WebSocket服务器
+            ws_thread_ = std::thread([this]() {
+                ws_server_.run();
+            });
+            
+            RCLCPP_INFO(this->get_logger(), "WebSocket server started on port %d", websocket_config_.port);
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to start WebSocket server: %s", e.what());
+            return CallbackReturn::ERROR;
+        }
+        
         return CallbackReturn::SUCCESS;
+    }
+
+    /**
+     * @brief 处理WebSocket连接打开事件
+     */
+    void Sherpa_onnx_ASRSerive::handle_websocket_open(connection_hdl hdl) {
+        std::lock_guard<std::mutex> lock(connections_mutex_);
+        connections_.insert(hdl);
+        RCLCPP_INFO(this->get_logger(), "New WebSocket connection established. Total connections: %zu", connections_.size());
+    }
+
+    /**
+     * @brief 处理WebSocket连接关闭事件
+     */
+    void Sherpa_onnx_ASRSerive::handle_websocket_close(connection_hdl hdl) {
+        std::lock_guard<std::mutex> lock(connections_mutex_);
+        connections_.erase(hdl);
+        RCLCPP_INFO(this->get_logger(), "WebSocket connection closed. Remaining connections: %zu", connections_.size());
+    }
+
+    /**
+     * @brief 处理WebSocket错误事件
+     */
+    void Sherpa_onnx_ASRSerive::handle_websocket_error(connection_hdl hdl) {
+        std::shared_ptr<websocketpp::connection<websocketpp::config::asio>> con = ws_server_.get_con_from_hdl(hdl);
+        RCLCPP_ERROR(this->get_logger(), "WebSocket error: %s", con->get_ec().message().c_str());
+    }
+
+    /**
+     * @brief 处理WebSocket消息
+     */
+    void Sherpa_onnx_ASRSerive::handle_websocket_message(connection_hdl hdl, server::message_ptr msg) {
+        try {
+            // 解析JSON消息
+            nlohmann::json request = nlohmann::json::parse(msg->get_payload());
+            
+            // 提取音频文件路径
+            std::string audio_path = request.value("audio_path", "");
+            if (audio_path.empty()) {
+                nlohmann::json response = {
+                    {"success", false},
+                    {"message", "audio_path is required"}
+                };
+                ws_server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
+                return;
+            }
+            
+            // 执行语音识别
+            sherpa_onnx::cxx::Wave wave = sherpa_onnx::cxx::ReadWave(audio_path);
+            if (wave.samples.empty()) {
+                nlohmann::json response = {
+                    {"success", false},
+                    {"message", "failed to read wave file: " + audio_path}
+                };
+                ws_server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
+                return;
+            }
+            
+            sherpa_onnx::cxx::OfflineStream stream = recognizer_->CreateStream();
+            stream.AcceptWaveform(wave.sample_rate, wave.samples.data(), wave.samples.size());
+            recognizer_->Decode(&stream);
+            sherpa_onnx::cxx::OfflineRecognizerResult result = recognizer_->GetResult(&stream);
+            
+            // 发送识别结果
+            nlohmann::json response = {
+                {"success", true},
+                {"result_text", result.text},
+                {"message", ""}
+            };
+            ws_server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
+            
+            RCLCPP_INFO(this->get_logger(), "Speech recognition completed for %s", audio_path.c_str());
+            
+        } catch (const std::exception& e) {
+            nlohmann::json response = {
+                {"success", false},
+                {"message", std::string("Error processing request: ") + e.what()}
+            };
+            ws_server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
+        }
     }
 
     /**
