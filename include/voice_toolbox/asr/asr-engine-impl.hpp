@@ -6,7 +6,7 @@
 #include "sherpa-onnx/c-api/c-api.h"
 namespace voice_toolbox
 {
-
+    template <typename AudioT, typename ResultT>
     class ASREngineImpl
     {
     public:
@@ -20,7 +20,7 @@ namespace voice_toolbox
          * @param audio The input audio data, which can be a file path or an audio array
          * @return The string representing the recognition result
          */
-        virtual sherpa_onnx::cxx::OfflineRecognizerResult SpeechRecogize(const sherpa_onnx::cxx::Wave &wave) = 0;
+        virtual ResultT SpeechRecogize(const AudioT &Audio) = 0;
 
         /**
          * @brief 初始化识别引擎
