@@ -16,6 +16,8 @@
 #include <deque>
 
 #include "voice_toolbox/asr/asr_engine.hpp"
+#include "voice_toolbox/asr/sensevoice.hpp"
+
 #include "voice_toolbox/srv/one_shot.hpp"
 #include "sherpa-onnx/c-api/cxx-api.h"
 
@@ -28,7 +30,7 @@ namespace voice_toolbox
     using connection_hdl = websocketpp::connection_hdl;
 
 
-    class Simple_ASRService : public ASR_Base<voice_toolbox::srv::OneShot>
+    class Simple_ASRService : public ASR_Service<voice_toolbox::srv::OneShot>
     {
     public:
         struct WebsocketConfig
@@ -52,14 +54,12 @@ namespace voice_toolbox
     protected:
     private:
         sherpa_onnx::cxx::OfflineRecognizerConfig asr_config_;
-        std::unique_ptr<sherpa_onnx::cxx::OfflineRecognizer> offline_recognizer_;  // 离线识别器
+        SenseVoiceOffline sensevoice_engine_;
         WebsocketConfig websocket_config_;
 
         // WebSocket服务器相关成员
         server ws_server_;
         std::thread ws_thread_;
-        std::map<connection_hdl, StreamConnectionDataPtr, std::owner_less<connection_hdl>> connections_;
-        std::mutex connections_mutex_;
 
         bool debug_ = false;
         bool enable_stream_asr_ = false;
@@ -68,12 +68,6 @@ namespace voice_toolbox
         asio::io_context io_work_context_;
         asio::steady_timer timer_;
         std::thread work_thread_;
-        
-        // 用于存储活跃连接和待处理连接
-        std::set<connection_hdl, std::owner_less<connection_hdl>> active_streams_;
-        std::deque<StreamConnectionDataPtr> ready_streams_;
-        
-
         
         // WebSocket事件处理方法
         void handle_websocket_open(connection_hdl hdl);

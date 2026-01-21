@@ -1,4 +1,4 @@
-#include "voice_toolbox/asr/asr_sherpa.hpp"
+#include "voice_toolbox/asr/simple_asr.hpp"
 #include <asio.hpp>
 
 namespace voice_toolbox
@@ -22,7 +22,7 @@ namespace voice_toolbox
             {
                 ws_thread_.join();
             }
-            
+
             if (work_thread_.joinable())
             {
                 io_work_context_.stop();
@@ -42,7 +42,7 @@ namespace voice_toolbox
     {
         try
         {
-            //set logging settings
+            // set logging settings
             ws_server_.set_access_channels(websocketpp::log::alevel::connect |
                                            websocketpp::log::alevel::disconnect |
                                            websocketpp::log::alevel::app);
@@ -127,7 +127,6 @@ namespace voice_toolbox
         return CallbackReturn::SUCCESS;
     }
 
-
     /**
      * @brief Activate the ASR service and create the ASR engine instance and WebSocket server
      * @param state Previous state
@@ -135,20 +134,20 @@ namespace voice_toolbox
      */
     CallbackReturn Simple_ASRService::on_activate(const rclcpp_lifecycle::State &state)
     {
-        // Create a ROS2 service by calling the base class method
+        // initialize ROS2 service 
         auto base_state = ASR_Service<voice_toolbox::srv::OneShot>::on_activate(state);
         if (base_state != CallbackReturn::SUCCESS)
         {
             return base_state;
         }
-        auto temp_recognizer = sherpa_onnx::cxx::OfflineRecognizer::Create(asr_config_);
-        if (!temp_recognizer.Get())
+
+        sensevoice_engine_ = SenseVoiceOffline(asr_config_);
+        // initialize ASR engine
+        if (!sensevoice_engine_.InitializeASREngine())
         {
-            RCLCPP_ERROR(get_logger(), "ASR engine initialization failed. Please check the ASR configuration");
+            RCLCPP_ERROR(get_logger(), "SenseVoice ASR engine initialization failed. Please check the configuration");
             return CallbackReturn::ERROR;
         }
-
-
         return CallbackReturn::SUCCESS;
     }
 
@@ -202,7 +201,7 @@ namespace voice_toolbox
      * @param response Service response object
      */
     void Sherpa_onnx_ASRSerive::handle_service_request(const std::shared_ptr<typename voice_toolbox::srv::OneShot::Request> request,
-                                                   std::shared_ptr<typename voice_toolbox::srv::OneShot::Response> response)
+                                                       std::shared_ptr<typename voice_toolbox::srv::OneShot::Response> response)
     {
         sherpa_onnx::cxx::Wave wave = sherpa_onnx::cxx::ReadWave(request->audio_path);
         if (wave.samples.empty())
@@ -213,7 +212,7 @@ namespace voice_toolbox
             response->message = "failed to read wave file:: " + request->audio_path;
             return;
         }
-        
+
         sherpa_onnx::cxx::OfflineStream stream = recognizer_->CreateStream();
         stream.AcceptWaveform(wave.sample_rate, wave.samples.data(), wave.samples.size());
 
@@ -224,8 +223,6 @@ namespace voice_toolbox
         response->success = true;
         response->message = "";
     }
-
-
 
 } // namespace voice_toolbox
 
