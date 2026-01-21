@@ -25,11 +25,9 @@
 namespace voice_toolbox
 {
 
-
     class Simple_ASRService : public ASR_Service<voice_toolbox::srv::OneShot>
     {
     public:
-
         Simple_ASRService(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
         ~Simple_ASRService();
 
@@ -47,7 +45,6 @@ namespace voice_toolbox
         websocket_asr::WebsocketConfig websocket_config_;
         std::unique_ptr<webscoket_asr::WebsocketOfflineASR> websocket_ptr_;
         bool debug_ = false;
-
     };
 
 } // namespace voice_toolbox

@@ -129,15 +129,6 @@ namespace voice_toolbox
     void Sherpa_onnx_ASRSerive::handle_service_request(const std::shared_ptr<typename voice_toolbox::srv::OneShot::Request> request,
                                                        std::shared_ptr<typename voice_toolbox::srv::OneShot::Response> response)
     {
-        sherpa_onnx::cxx::Wave wave = sherpa_onnx::cxx::ReadWave(request->audio_path);
-        if (wave.samples.empty())
-        {
-            RCLCPP_ERROR(this->get_logger(), "failed to read wave file: %s", request->audio_path.c_str());
-            response->result_text = "";
-            response->success = false;
-            response->message = "failed to read wave file:: " + request->audio_path;
-            return;
-        }
 
         response->result_text = result.text;
         response->success = true;

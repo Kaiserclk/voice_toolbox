@@ -1,4 +1,6 @@
-string audio_path
+uint8[] audio_data
+string encoding
+int32 sample_rate
 ---
 bool success          
 string result_text    
