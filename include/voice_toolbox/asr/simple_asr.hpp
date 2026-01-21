@@ -1,9 +1,7 @@
 #pragma once
 // extern pkg
-#include <websocketpp/config/asio_no_tls.hpp>
-#include <websocketpp/server.hpp>
-#include <yaml-cpp/yaml.h>
-#include <nlohmann/json.hpp>
+
+#include "voice_toolbox/asr/asr-websocket.hpp"
 
 #include <string>
 #include <memory>
@@ -26,20 +24,11 @@
 
 namespace voice_toolbox
 {
-    using server = websocketpp::server<websocketpp::config::asio>;
-    using connection_hdl = websocketpp::connection_hdl;
 
 
     class Simple_ASRService : public ASR_Service<voice_toolbox::srv::OneShot>
     {
     public:
-        struct WebsocketConfig
-        {
-            int port = 8000;                      // 服务器端口
-            std::string log_level = "INFO";       // 日志级别
-            int max_connections = 5;              // 最大连接数
-            int connection_timeout = 300;         // 连接超时时间(秒)
-        };
 
         Simple_ASRService(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
         ~Simple_ASRService();
@@ -50,30 +39,14 @@ namespace voice_toolbox
         void handle_service_request(const std::shared_ptr<typename voice_toolbox::srv::OneShot::Request> request,
                                     std::shared_ptr<typename voice_toolbox::srv::OneShot::Response> response) override;
 
-
     protected:
     private:
         sherpa_onnx::cxx::OfflineRecognizerConfig asr_config_;
         SenseVoiceOffline sensevoice_engine_;
-        WebsocketConfig websocket_config_;
-
-        // WebSocket服务器相关成员
-        server ws_server_;
-        std::thread ws_thread_;
-
+        std::unique_ptr<SenseVoiceOffline> sensevoice_ptr_;
+        websocket_asr::WebsocketConfig websocket_config_;
+        std::unique_ptr<webscoket_asr::WebsocketOfflineASR> websocket_ptr_;
         bool debug_ = false;
-        bool enable_stream_asr_ = false;
-
-        // 用于流式识别的定时器和工作上下文
-        asio::io_context io_work_context_;
-        asio::steady_timer timer_;
-        std::thread work_thread_;
-        
-        // WebSocket事件处理方法
-        void handle_websocket_open(connection_hdl hdl);
-        void handle_websocket_close(connection_hdl hdl);
-        void handle_websocket_error(connection_hdl hdl);
-        void handle_websocket_message(connection_hdl hdl, server::message_ptr msg);
 
     };
 

@@ -35,47 +35,6 @@ namespace voice_toolbox
         }
     }
 
-    /**
-     * @brief Initialize the websocket server
-     */
-    bool Simple_ASRService::initWebSocketServer()
-    {
-        try
-        {
-            // set logging settings
-            ws_server_.set_access_channels(websocketpp::log::alevel::connect |
-                                           websocketpp::log::alevel::disconnect |
-                                           websocketpp::log::alevel::app);
-            ws_server_.clear_access_channels(websocketpp::log::alevel::frame_payload |
-                                             websocketpp::log::alevel::frame_header);
-            ws_server_.set_error_channels(websocketpp::log::elevel::warn |
-                                          websocketpp::log::elevel::rerror |
-                                          websocketpp::log::elevel::fatal);
-
-            ws_server_.init_asio();
-            ws_server_.set_message_handler(std::bind(
-                &Simple_ASRService::handle_websocket_message, this, std::placeholders::_1, std::placeholders::_2));
-            ws_server_.set_open_handler(std::bind(
-                &Simple_ASRService::handle_websocket_open, this, std::placeholders::_1));
-            ws_server_.set_close_handler(std::bind(
-                &Simple_ASRService::handle_websocket_close, this, std::placeholders::_1));
-            ws_server_.set_fail_handler(std::bind(
-                &Simple_ASRService::handle_websocket_error, this, std::placeholders::_1));
-
-            ws_server_.listen(websocket_config_.port);
-            ws_server_.start_accept();
-            ws_thread_ = std::thread([this]()
-                                     { ws_server_.run(); });
-
-            RCLCPP_INFO(this->get_logger(), "WebSocket server started on port %d", websocket_config_.port);
-        }
-        catch (const std::exception &e)
-        {
-            RCLCPP_ERROR(this->get_logger(), "Failed to start WebSocket server: %s", e.what());
-            return false;
-        }
-        return true;
-    }
 
     CallbackReturn Simple_ASRService::on_configure(const rclcpp_lifecycle::State &)
     {
@@ -140,59 +99,26 @@ namespace voice_toolbox
         {
             return base_state;
         }
-
-        sensevoice_engine_ = SenseVoiceOffline(asr_config_);
         // initialize ASR engine
+        sensevoice_engine_ = SenseVoiceOffline(asr_config_);
         if (!sensevoice_engine_.InitializeASREngine())
         {
             RCLCPP_ERROR(get_logger(), "SenseVoice ASR engine initialization failed. Please check the configuration");
             return CallbackReturn::ERROR;
         }
-        return CallbackReturn::SUCCESS;
-    }
 
-    /**
-     * @brief Handling WebSocket connection open events
-     */
-    void Simple_ASRService::handle_websocket_open(connection_hdl hdl)
-    {
-        std::lock_guard<std::mutex> lock(connections_mutex_);
-        connections_[hdl] = std::make_shared<StreamConnectionData>();
-        if (debug_)
-            RCLCPP_INFO(this->get_logger(), "New WebSocket connection established. Total connections: %zu", connections_.size());
-    }
-
-    /**
-     * @brief Handling WebSocket connection close events
-     */
-    void Simple_ASRService::handle_websocket_close(connection_hdl hdl)
-    {
-        std::lock_guard<std::mutex> lock(connections_mutex_);
-        connections_.erase(hdl);
-    }
-
-    /**
-     * @brief Handling WebSocket error events
-     */
-    void Simple_ASRService::handle_websocket_error(connection_hdl hdl)
-    {
-        std::shared_ptr<websocketpp::connection<websocketpp::config::asio>> con = ws_server_.get_con_from_hdl(hdl);
-        RCLCPP_ERROR(this->get_logger(), "WebSocket error: %s", con->get_ec().message().c_str());
-    }
-
-    /**
-     * @brief Handling WebSocket messages
-     */
-    void Simple_ASRService::handle_websocket_message(connection_hdl hdl, server::message_ptr msg)
-    {
-
-        catch (const std::exception &e)
+        // initialize WebSocket server
+        websocket_ptr_=std::make_shared<websocket_asr::WebsocketOfflineASR>(websocket_config_);
+        if (!websocket_ptr_->Initialize())
         {
-            nlohmann::json response = {
-                {"success", false},
-                {"message", std::string("Error processing request: ") + e.what()}};
-            ws_server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
+            RCLCPP_ERROR(get_logger(), "Websocket initialization failed. Please check the configuration");
+            return CallbackReturn::ERROR;
         }
+        websocket_ptr_->SetAudioFileProcessingCallback()
+
+
+
+        return CallbackReturn::SUCCESS;
     }
 
     /**
@@ -213,12 +139,6 @@ namespace voice_toolbox
             return;
         }
 
-        sherpa_onnx::cxx::OfflineStream stream = recognizer_->CreateStream();
-        stream.AcceptWaveform(wave.sample_rate, wave.samples.data(), wave.samples.size());
-
-        recognizer_->Decode(&stream);
-
-        sherpa_onnx::cxx::OfflineRecognizerResult result = recognizer_->GetResult(&stream);
         response->result_text = result.text;
         response->success = true;
         response->message = "";
