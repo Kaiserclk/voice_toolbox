@@ -4,7 +4,7 @@
 namespace voice_toolbox
 {
     Simple_ASRService::Simple_ASRService(const rclcpp::NodeOptions &options)
-        : ASREngineImpl("Sherpa_onnx_ASR", "asr_service", options)
+        : ASR_Service("Sherpa_onnx_ASR", "asr_service", options)
     {
         this->declare_parameter<std::string>("config_file", "/home/kaiser/WORK_SPACE-2/voice_toolbox_ws/src/voice_toolbox/config/voice_toolbox_setting.yaml");
         this->declare_parameter<bool>("debug", false);
@@ -12,29 +12,7 @@ namespace voice_toolbox
 
     Simple_ASRService::~Simple_ASRService()
     {
-        // release resource
-        try
-        {
-            ws_server_.stop_listening();
-            ws_server_.stop();
-
-            if (ws_thread_.joinable())
-            {
-                ws_thread_.join();
-            }
-
-            if (work_thread_.joinable())
-            {
-                io_work_context_.stop();
-                work_thread_.join();
-            }
-        }
-        catch (const std::exception &e)
-        {
-            RCLCPP_ERROR(this->get_logger(), "Error stopping WebSocket server: %s", e.what());
-        }
     }
-
 
     CallbackReturn Simple_ASRService::on_configure(const rclcpp_lifecycle::State &)
     {
@@ -66,8 +44,6 @@ namespace voice_toolbox
 
         asr_config_.model_config.num_threads = asr_node["num_threads"] ? asr_node["num_threads"].as<int>() : 1;
 
-        asr_config_.model_config.debug = asr_node["debug"] ? asr_node["debug"].as<bool>() : false;
-
         if (!config["websocket"])
         {
             RCLCPP_WARN(this->get_logger(), "Config file does not contain 'websocket' section, using default values");
@@ -80,8 +56,6 @@ namespace voice_toolbox
             websocket_config_.log_level = ws_node["log_level"] ? ws_node["log_level"].as<std::string>() : "INFO";
 
             websocket_config_.max_connections = ws_node["max_connections"] ? ws_node["max_connections"].as<int>() : 100;
-
-            websocket_config_.connection_timeout = ws_node["connection_timeout"] ? ws_node["connection_timeout"].as<int>() : 300;
         }
         return CallbackReturn::SUCCESS;
     }
@@ -93,30 +67,27 @@ namespace voice_toolbox
      */
     CallbackReturn Simple_ASRService::on_activate(const rclcpp_lifecycle::State &state)
     {
-        // initialize ROS2 service 
+        // initialize ROS2 service
         auto base_state = ASR_Service<voice_toolbox::srv::OneShot>::on_activate(state);
         if (base_state != CallbackReturn::SUCCESS)
         {
             return base_state;
         }
         // initialize ASR engine
-        sensevoice_engine_ = SenseVoiceOffline(asr_config_);
-        if (!sensevoice_engine_.InitializeASREngine())
+        sensevoice_ = std::make_unique<asr_engine::SenseVoiceOffline>(asr_config_);
+        if (!sensevoice_->InitializeASREngine())
         {
             RCLCPP_ERROR(get_logger(), "SenseVoice ASR engine initialization failed. Please check the configuration");
             return CallbackReturn::ERROR;
         }
 
         // initialize WebSocket server
-        websocket_ptr_=std::make_shared<websocket_asr::WebsocketOfflineASR>(websocket_config_);
+        websocket_ptr_ = std::make_unique<websocket_asr::WebsocketOfflineASR>(websocket_config_);
         if (!websocket_ptr_->Initialize())
         {
             RCLCPP_ERROR(get_logger(), "Websocket initialization failed. Please check the configuration");
             return CallbackReturn::ERROR;
         }
-        websocket_ptr_->SetAudioFileProcessingCallback()
-
-
 
         return CallbackReturn::SUCCESS;
     }
@@ -126,13 +97,24 @@ namespace voice_toolbox
      * @param request Service request object
      * @param response Service response object
      */
-    void Sherpa_onnx_ASRSerive::handle_service_request(const std::shared_ptr<typename voice_toolbox::srv::OneShot::Request> request,
-                                                       std::shared_ptr<typename voice_toolbox::srv::OneShot::Response> response)
+    void Simple_ASRService::handle_service_request(const std::shared_ptr<typename voice_toolbox::srv::OneShot::Request> request,
+                                                   std::shared_ptr<typename voice_toolbox::srv::OneShot::Response> response)
     {
 
-        response->result_text = result.text;
-        response->success = true;
-        response->message = "";
+        std::shared_ptr<sherpa_onnx::cxx::OfflineRecognizerResult> result_ptr = sensevoice_->SpeechRecogize(request->audio_data, request->sample_rate);
+
+        if (result_ptr && !result_ptr->text.empty())
+        {
+            response->result_text = result_ptr->text;
+            response->success = true;
+            response->message = "Recognition successful";
+        }
+        else
+        {
+            response->result_text = "";
+            response->success = false;
+            response->message = "Recognition failed or returned empty result";
+        }
     }
 
 } // namespace voice_toolbox

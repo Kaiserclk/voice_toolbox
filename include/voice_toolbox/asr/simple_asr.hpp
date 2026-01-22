@@ -5,16 +5,9 @@
 
 #include <string>
 #include <memory>
-#include <atomic>
-#include <filesystem>
-#include <thread>
-#include <set>
-#include <mutex>
-#include <map>
-#include <deque>
 
-#include "voice_toolbox/asr/asr_engine.hpp"
-#include "voice_toolbox/asr/sensevoice.hpp"
+#include "voice_toolbox/asr/asr-engine.hpp"
+#include "voice_toolbox/asr/asr-server-impl.hpp"
 
 #include "voice_toolbox/srv/one_shot.hpp"
 #include "sherpa-onnx/c-api/cxx-api.h"
@@ -40,10 +33,9 @@ namespace voice_toolbox
     protected:
     private:
         sherpa_onnx::cxx::OfflineRecognizerConfig asr_config_;
-        SenseVoiceOffline sensevoice_engine_;
-        std::unique_ptr<SenseVoiceOffline> sensevoice_ptr_;
+        std::unique_ptr<asr_engine::SenseVoiceOffline> sensevoice_;
         websocket_asr::WebsocketConfig websocket_config_;
-        std::unique_ptr<webscoket_asr::WebsocketOfflineASR> websocket_ptr_;
+        std::unique_ptr<websocket_asr::WebsocketOfflineASR> websocket_ptr_;
         bool debug_ = false;
     };
 
