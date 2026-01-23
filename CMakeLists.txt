@@ -28,7 +28,7 @@ set(SHERPA_ONNX_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include/sherpa-onnx)
 # 生成消息接口
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/PlayAudio.action"
-  "srv/OneShot.srv"
+  "interfaces/srv/OneShot.srv"
 )
 
 # 设置需要依赖生成action的库
@@ -63,10 +63,10 @@ endif()
 #音频驱动
 add_library(audio_player_component SHARED src/audio_player.cpp)
 #ASR服务
-add_library(asr_sherpa_service_component SHARED src/asr/asr_sherpa.cpp)
+add_library(offline_asr_component SHARED src/asr/simple_asr.cpp src/asr/asr-websocket.cpp)
 
 # 设置库为POSITION_INDEPENDENT_CODE以支持链接静态库
-set_property(TARGET asr_sherpa_service_component PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET offline_asr_component PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 # Link SDL2 libraries
 target_link_libraries(audio_player_component 
@@ -83,14 +83,14 @@ target_include_directories(audio_player_component PRIVATE
 )
 
 # Include directories for asr library - adding sherpa_lib include paths
-target_include_directories(asr_sherpa_service_component PRIVATE
+target_include_directories(offline_asr_component PRIVATE
   include
   ${SHERPA_ONNX_INCLUDE_DIR}  # 添加sherpa-onnx的头文件路径
   ${yaml-cpp_INCLUDE_DIRS}
 )
 
 # 添加RPATH设置，确保运行时能找到动态库
-set_target_properties(asr_sherpa_service_component PROPERTIES
+set_target_properties(offline_asr_component PROPERTIES
   BUILD_WITH_INSTALL_RPATH TRUE
   INSTALL_RPATH_USE_LINK_PATH TRUE
   INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib:${SHERPA_ONNX_LIB_DIR}"
@@ -98,8 +98,8 @@ set_target_properties(asr_sherpa_service_component PROPERTIES
 
 ament_target_dependencies(audio_player_component ${dependencies})
 
-ament_target_dependencies(asr_sherpa_service_component ${asr_dependencies})
-target_link_libraries(asr_sherpa_service_component
+ament_target_dependencies(offline_asr_component ${asr_dependencies})
+target_link_libraries(offline_asr_component
   websocketpp::websocketpp
   ${YAML_CPP_LIBRARIES}
   ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-c-api.so      # sherpa-onnx C API库
@@ -111,7 +111,7 @@ rosidl_get_typesupport_target(cpp_typesupport_target_audio "${PROJECT_NAME}" "ro
 target_link_libraries(audio_player_component "${cpp_typesupport_target_audio}")
 
 rosidl_get_typesupport_target(cpp_typesupport_target_asr "${PROJECT_NAME}" "rosidl_typesupport_cpp")
-target_link_libraries(asr_sherpa_service_component "${cpp_typesupport_target_asr}")
+target_link_libraries(offline_asr_component "${cpp_typesupport_target_asr}")
 
 # 注册节点
 rclcpp_components_register_node(
@@ -120,9 +120,9 @@ rclcpp_components_register_node(
     EXECUTABLE AudioPlayer
 )
 rclcpp_components_register_node(
-    asr_sherpa_service_component
-    PLUGIN "voice_toolbox::Sherpa_onnx_ASRSerive"
-    EXECUTABLE asr_sherpa
+    offline_asr_component
+    PLUGIN "voice_toolbox::Simple_ASRService"
+    EXECUTABLE offline_asr
 )
 
 
@@ -134,9 +134,9 @@ install(TARGETS audio_player_component
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin
 )
-ament_export_targets(export_asr_sherpa_service_component)
-install(TARGETS asr_sherpa_service_component
-        EXPORT export_asr_sherpa_service_component
+ament_export_targets(export_offline_asr_component)
+install(TARGETS offline_asr_component
+        EXPORT export_offline_asr_component
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin

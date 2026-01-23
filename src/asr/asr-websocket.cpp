@@ -33,10 +33,6 @@ namespace websocket_asr
         audio_callback_ = callback;
     }
 
-    void WebsocketOfflineASR::SetAudioFileProcessingCallback(AudioFileProcessingCallback callback)
-    {
-        audio_file_callback_ = callback;
-    }
 
     bool WebsocketOfflineASR::Initialize()
     {

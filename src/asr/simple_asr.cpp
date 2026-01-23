@@ -4,10 +4,10 @@
 namespace voice_toolbox
 {
     Simple_ASRService::Simple_ASRService(const rclcpp::NodeOptions &options)
-        : ASR_Service("Sherpa_onnx_ASR", "asr_service", options)
+        : ASR_Service("OfflineASR", "asr_service", options)
     {
         this->declare_parameter<std::string>("config_file", "/home/kaiser/WORK_SPACE-2/voice_toolbox_ws/src/voice_toolbox/config/voice_toolbox_setting.yaml");
-        this->declare_parameter<bool>("debug", false);
+        this->declare_parameter<bool>("debug", true);
     }
 
     Simple_ASRService::~Simple_ASRService()
@@ -100,8 +100,17 @@ namespace voice_toolbox
     void Simple_ASRService::handle_service_request(const std::shared_ptr<typename voice_toolbox::srv::OneShot::Request> request,
                                                    std::shared_ptr<typename voice_toolbox::srv::OneShot::Response> response)
     {
+        // 添加计时功能
+        auto start_time = std::chrono::high_resolution_clock::now();
 
         std::shared_ptr<sherpa_onnx::cxx::OfflineRecognizerResult> result_ptr = sensevoice_->SpeechRecogize(request->audio_data, request->sample_rate);
+
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        
+        if (debug_) {
+            RCLCPP_INFO(get_logger(), "Speech recognition took %ld ms", duration.count());
+        }
 
         if (result_ptr && !result_ptr->text.empty())
         {
