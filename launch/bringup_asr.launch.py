@@ -12,8 +12,8 @@ def generate_launch_description():
     config_file=os.path.join(get_package_share_directory('voice_toolbox'),'config','voice_toolbox_setting.yaml')
     asr_serive = LifecycleNode(
           package='voice_toolbox',
-          executable='asr_sherpa',
-          name='asr_sherpa',  
+          executable='offline_asr',
+          name='offline_asr',  
           output='screen',
           parameters=[{ 'config_file':config_file}],
           namespace=''

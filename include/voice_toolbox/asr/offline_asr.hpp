@@ -18,11 +18,11 @@
 namespace voice_toolbox
 {
 
-    class Simple_ASRService : public ASR_Service<voice_toolbox::srv::OneShot>
+    class Offline_ASR : public ASR_Service<voice_toolbox::srv::OneShot>
     {
     public:
-        Simple_ASRService(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
-        ~Simple_ASRService();
+        Offline_ASR(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
+        ~Offline_ASR();
 
         CallbackReturn on_configure(const rclcpp_lifecycle::State &previous_state) override;
         CallbackReturn on_activate(const rclcpp_lifecycle::State &previous_state) override;
@@ -30,12 +30,14 @@ namespace voice_toolbox
         void handle_service_request(const std::shared_ptr<typename voice_toolbox::srv::OneShot::Request> request,
                                     std::shared_ptr<typename voice_toolbox::srv::OneShot::Response> response) override;
 
-    protected:
+
     private:
+        std::string recogize(const std::vector<int16_t> &audio_data, int32_t sample_rate);
+
         sherpa_onnx::cxx::OfflineRecognizerConfig asr_config_;
         std::unique_ptr<asr_engine::SenseVoiceOffline> sensevoice_;
         websocket_asr::WebsocketConfig websocket_config_;
-        std::unique_ptr<websocket_asr::WebsocketOfflineASR> websocket_ptr_;
+        std::unique_ptr<websocket_asr::InlineWebsocketASR> websocket_ptr_;
         bool debug_ = false;
     };
 

@@ -1,4 +1,4 @@
-uint8[] audio_data
+int16[] audio_data
 string encoding
 int32 sample_rate
 ---

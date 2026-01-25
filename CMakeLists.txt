@@ -63,7 +63,7 @@ endif()
 #音频驱动
 add_library(audio_player_component SHARED src/audio_player.cpp)
 #ASR服务
-add_library(offline_asr_component SHARED src/asr/simple_asr.cpp src/asr/asr-websocket.cpp)
+add_library(offline_asr_component SHARED src/asr/offline_asr.cpp src/asr/asr-websocket.cpp)
 
 # 设置库为POSITION_INDEPENDENT_CODE以支持链接静态库
 set_property(TARGET offline_asr_component PROPERTY POSITION_INDEPENDENT_CODE ON)
@@ -121,7 +121,7 @@ rclcpp_components_register_node(
 )
 rclcpp_components_register_node(
     offline_asr_component
-    PLUGIN "voice_toolbox::Simple_ASRService"
+    PLUGIN "voice_toolbox::Offline_ASR"
     EXECUTABLE offline_asr
 )
 

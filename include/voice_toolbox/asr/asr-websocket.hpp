@@ -19,29 +19,43 @@ namespace websocket_asr
     struct WebsocketConfig
     {
         int port = 8000;                // 服务器端口
-        std::string log_level = "INFO"; // 日志级别
         int max_connections = 5;        // 最大连接数
     };
 
-    using AudioProcessingCallback = std::function<nlohmann::json(const std::vector<float>& audio_data)>;
-    using AudioFileProcessingCallback = std::function<nlohmann::json(const std::string& audio_file_path)>;
+    using AudioProcessingCallback = std::function<std::string(const std::vector<int16_t>& audio_data, uint32_t sample_rate)>;
 
-    class WebsocketOfflineASR
+    // 自定义哈希函数用于connection_hdl
+    struct ConnectionHash {
+        std::size_t operator()(const connection_hdl& hdl) const {
+            // 将weak_ptr锁定并获取其地址作为哈希值
+            auto ptr = hdl.lock();
+            return std::hash<void*>{}(ptr.get());
+        }
+    };
+    
+    // 自定义比较函数用于connection_hdl
+    struct ConnectionEqual {
+        bool operator()(const connection_hdl& lhs, const connection_hdl& rhs) const {
+            return lhs.lock() == rhs.lock();
+        }
+    };
+
+    class InlineWebsocketASR
     {
     public:
-        WebsocketOfflineASR(const WebsocketConfig &config);
-        ~WebsocketOfflineASR();
+        InlineWebsocketASR(const WebsocketConfig &config);
+        ~InlineWebsocketASR();
         bool Initialize();
         void SetAudioProcessingCallback(AudioProcessingCallback callback);
-        void SetAudioFileProcessingCallback(AudioFileProcessingCallback callback);
-
     private:
         server ws_server_;
         std::thread ws_thread_;
         WebsocketConfig config_;
         
         AudioProcessingCallback audio_callback_;
-        AudioFileProcessingCallback audio_file_callback_;
+        std::unordered_map<connection_hdl, std::vector<int16_t>, ConnectionHash, ConnectionEqual> audio_buffers_;
+        std::unordered_map<connection_hdl, uint32_t, ConnectionHash, ConnectionEqual> expected_sizes_;
+        std::mutex buffer_mutex_;
 
         // WebSocket事件处理方法
         void handle_open(connection_hdl hdl);
@@ -49,5 +63,6 @@ namespace websocket_asr
         void handle_error(connection_hdl hdl);
         void handle_message(connection_hdl hdl, server::message_ptr msg);
     };
+
 
 } // namespace websocket_asr
